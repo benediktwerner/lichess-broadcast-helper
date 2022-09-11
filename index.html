@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lichess Broadcast Helper</title>
+  </head>
+  <body>
+    <label for="url">Swiss URL:</label>
+    <input type="text" style="width: 400px" id="url" />
+    <button onclick="run()">Get game IDs</button>
+    <br />
+    Output:
+    <br />
+    <textarea id="output" cols="100" rows="10"></textarea>
+
+    <script>
+      const out = document.getElementById('output');
+      const inp = document.getElementById('url');
+
+      const url = localStorage.getItem('swiss-url');
+      if (url) inp.value = url;
+
+      async function run() {
+        try {
+          const url = inp.value;
+          const match = url.match(/https:\/\/lichess\.org\/swiss\/(\w{8})/);
+          if (!match) {
+            out.value =
+              "Invalid URL. Should look like 'https://lichess.org/swiss/abcdefgh'";
+            return;
+          }
+          localStorage.setItem('swiss-url', url);
+          out.value = 'Downloading ...';
+          const [_, id] = match;
+          const res = await fetch(
+            `https://lichess.org/api/swiss/${id}/games?moves=false`,
+            { headers: { Accept: 'application/x-ndjson' } }
+          );
+          const txt = await res.text();
+          const ids = [];
+          console.log(txt);
+          for (const line of txt.split(/\n/g)) {
+            if (!line) continue;
+            console.log(line);
+            const game = JSON.parse(line);
+            if (['created', 'started'].includes(game.status)) {
+              ids.push(game.id);
+            }
+          }
+          out.value = ids.join(' ');
+        } catch (e) {
+          console.error(e);
+          out.value = 'Error:\n' + e;
+        }
+      }
+    </script>
+  </body>
+</html>
