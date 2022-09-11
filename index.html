@@ -10,20 +10,56 @@
     <label for="url">Swiss URL:</label>
     <input type="text" style="width: 400px" id="url" />
     <button onclick="run()">Get game IDs</button>
-    <br />
-    Output:
+    <p>
+      The first load will be relatively slow if there are already many games but
+      IDs will continously update afterwards. Reload the page to stop it.
+    </p>
+    Round:
     <br />
     <textarea id="output" cols="100" rows="10"></textarea>
+    <br />
+    Still ongoing:
+    <br />
+    <textarea id="output2" cols="100" rows="10"></textarea>
 
     <script>
       const out = document.getElementById('output');
+      const out2 = document.getElementById('output2');
       const inp = document.getElementById('url');
 
       const url = localStorage.getItem('swiss-url');
       if (url) inp.value = url;
 
+      const readStream = (processLine) => (response) => {
+        const stream = response.body.getReader();
+        const matcher = /\r?\n/;
+        const decoder = new TextDecoder();
+        let buf = '';
+
+        const loop = () =>
+          stream.read().then(({ done, value }) => {
+            if (done) {
+              if (buf.length > 0) processLine(JSON.parse(buf));
+            } else {
+              const chunk = decoder.decode(value, {
+                stream: true,
+              });
+              buf += chunk;
+
+              const parts = buf.split(matcher);
+              buf = parts.pop();
+              for (const i of parts.filter((p) => p))
+                processLine(JSON.parse(i));
+              return loop();
+            }
+          });
+
+        return loop();
+      };
+
       async function run() {
         try {
+          const players = new Set();
           const url = inp.value;
           const match = url.match(/https:\/\/lichess\.org\/swiss\/(\w{8})/);
           if (!match) {
@@ -39,17 +75,37 @@
             { headers: { Accept: 'application/x-ndjson' } }
           );
           const txt = await res.text();
-          const ids = [];
+          let roundIds = [];
           console.log(txt);
           for (const line of txt.split(/\n/g)) {
             if (!line) continue;
             console.log(line);
             const game = JSON.parse(line);
             if (['created', 'started'].includes(game.status)) {
-              ids.push(game.id);
+              roundIds.push(game.id);
             }
+            players.add(game.players.white.user.id);
+            players.add(game.players.black.user.id);
           }
-          out.value = ids.join(' ');
+          let ongoingIds = [...roundIds];
+          out.value = roundIds.join(' ');
+
+          fetch('https://lichess.org/api/stream/games-by-users', {
+            method: 'POST',
+            body: [...players.values()].join(','),
+          }).then(
+            readStream((game) => {
+              if (game.status > 20)
+                ongoingIds = ongoingIds.filter((id) => id !== game.id);
+              else {
+                if (ongoingIds.length === 0) roundIds = [];
+                roundIds.push(game.id);
+                ongoingIds.push(game.id);
+              }
+              out.value = roundIds.join(' ');
+              out2.value = ongoingIds.join(' ');
+            })
+          );
         } catch (e) {
           console.error(e);
           out.value = 'Error:\n' + e;
