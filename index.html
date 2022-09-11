@@ -14,7 +14,7 @@
       The first load will be relatively slow if there are already many games but
       IDs will continously update afterwards. Reload the page to stop it.
     </p>
-    Round:
+    Games in current round:
     <br />
     <textarea id="output" cols="100" rows="10"></textarea>
     <br />
@@ -75,32 +75,52 @@
             { headers: { Accept: 'application/x-ndjson' } }
           );
           const txt = await res.text();
+          const games = txt
+            .split(/\n/g)
+            .filter((x) => !!x)
+            .map((x) => JSON.parse(x));
+
+          let currRoundStart = 0;
+          const perf = games[0].perf;
+          for (const game of games) {
+            if (game.createdAt > currRoundStart + 1000)
+              currRoundStart = game.createdAt - 1000;
+          }
+
           let roundIds = [];
-          console.log(txt);
-          for (const line of txt.split(/\n/g)) {
-            if (!line) continue;
-            console.log(line);
-            const game = JSON.parse(line);
-            if (['created', 'started'].includes(game.status)) {
-              roundIds.push(game.id);
-            }
+          let ongoingIds = [];
+          for (const game of games) {
+            if (game.createdAt > currRoundStart) roundIds.push(game.id);
             players.add(game.players.white.user.id);
             players.add(game.players.black.user.id);
           }
-          let ongoingIds = [...roundIds];
           out.value = roundIds.join(' ');
 
-          fetch('https://lichess.org/api/stream/games-by-users', {
-            method: 'POST',
-            body: [...players.values()].join(','),
-          }).then(
+          fetch(
+            'https://lichess.org/api/stream/games-by-users?withCurrentGames=true',
+            {
+              method: 'POST',
+              body: [...players.values()].join(','),
+            }
+          ).then(
             readStream((game) => {
+              if (
+                !game.rated ||
+                game.createdAt < currRoundStart ||
+                game.perf !== perf ||
+                !game.players.black.userId ||
+                !game.players.white.userId
+              )
+                return;
               if (game.status > 20)
                 ongoingIds = ongoingIds.filter((id) => id !== game.id);
               else {
-                if (ongoingIds.length === 0) roundIds = [];
-                roundIds.push(game.id);
-                ongoingIds.push(game.id);
+                if (roundIds.includes(game.id)) ongoingIds.push(game.id);
+                else {
+                  if (ongoingIds.length === 0) roundIds = [];
+                  roundIds.push(game.id);
+                  ongoingIds.push(game.id);
+                }
               }
               out.value = roundIds.join(' ');
               out2.value = ongoingIds.join(' ');
