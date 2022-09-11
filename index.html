@@ -69,6 +69,7 @@
           }
           localStorage.setItem('swiss-url', url);
           out.value = 'Downloading ...';
+
           const [_, id] = match;
           const res = await fetch(
             `https://lichess.org/api/swiss/${id}/games?moves=false`,
@@ -83,14 +84,17 @@
           let currRoundStart = 0;
           const perf = games[0].perf;
           for (const game of games) {
-            if (game.createdAt > currRoundStart + 1000)
+            if (game.createdAt > currRoundStart + 1000) {
               currRoundStart = game.createdAt - 1000;
+            }
           }
 
           let roundIds = [];
           let ongoingIds = [];
           for (const game of games) {
-            if (game.createdAt > currRoundStart) roundIds.push(game.id);
+            if (game.createdAt > currRoundStart) {
+              roundIds.push(game.id);
+            }
             players.add(game.players.white.user.id);
             players.add(game.players.black.user.id);
           }
@@ -110,14 +114,21 @@
                 game.perf !== perf ||
                 !game.players.black.userId ||
                 !game.players.white.userId
-              )
+              ) {
                 return;
-              if (game.status > 20)
+              }
+              if (game.status > 20) {
                 ongoingIds = ongoingIds.filter((id) => id !== game.id);
-              else {
-                if (roundIds.includes(game.id)) ongoingIds.push(game.id);
-                else {
-                  if (ongoingIds.length === 0) roundIds = [];
+              } else {
+                if (roundIds.includes(game.id)) {
+                  ongoingIds.push(game.id);
+                } else {
+                  if (ongoingIds.length === 0) {
+                    currRoundStart = game.createdAt - 1000;
+                    roundIds = [];
+                  } else if (game.createdAt > currRoundStart + 10_000) {
+                    return;
+                  }
                   roundIds.push(game.id);
                   ongoingIds.push(game.id);
                 }
